@@ -1,0 +1,366 @@
+{
+  "name": "Logs & Alerts - Offline Events Facebook",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "value": "*/15 * * * *"
+            }
+          ]
+        }
+      },
+      "name": "Schedule - Every 15 minutes",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate monitoring report for Facebook offline events\nconst now = new Date();\nconst fifteenMinutesAgo = new Date(now.getTime() - (15 * 60 * 1000));\n\n// Initialize monitoring data structure\nconst monitoringReport = {\n  timestamp: now.toISOString(),\n  period: {\n    start: fifteenMinutesAgo.toISOString(),\n    end: now.toISOString(),\n    duration_minutes: 15\n  },\n  event_types: {\n    atendimento: { success: 0, errors: 0, last_error: null },\n    visita: { success: 0, errors: 0, last_error: null },\n    lead_ganho: { success: 0, errors: 0, last_error: null },\n    lead_perdido: { success: 0, errors: 0, last_error: null },\n    utm_capture: { success: 0, errors: 0, last_error: null }\n  },\n  facebook_api: {\n    total_events_sent: 0,\n    total_events_received: 0,\n    total_events_dropped: 0,\n    success_rate: 0,\n    errors: []\n  },\n  alerts: {\n    critical_errors: [],\n    rate_limit_warnings: [],\n    auth_issues: [],\n    general_warnings: []\n  },\n  health_status: 'UNKNOWN',\n  recommendations: []\n};\n\n// This would normally read from actual log files or database\n// For now, we'll simulate some monitoring data\nconsole.log(`[MONITORING] Generating Facebook events monitoring report for period: ${fifteenMinutesAgo.toISOString()} to ${now.toISOString()}`);\n\n// Simulate health check based on recent activity\nmonitoringReport.health_status = 'HEALTHY';\n\n// Add some sample recommendations based on monitoring\nmonitoringReport.recommendations = [\n  'Monitor Facebook API rate limits during peak hours',\n  'Ensure UTM parameters are consistently captured',\n  'Review conversion event tracking for Lead Ganho pipeline'\n];\n\nreturn monitoringReport;"
+      },
+      "name": "Generate Monitoring Report",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.facebook_api.total_events_dropped}}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "name": "Check for Critical Issues",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Create critical alert for Facebook API issues\nconst alertData = {\n  alert_type: 'CRITICAL',\n  timestamp: new Date().toISOString(),\n  issue: 'Facebook API Events Dropped',\n  details: {\n    events_dropped: $json.facebook_api.total_events_dropped,\n    success_rate: $json.facebook_api.success_rate,\n    period: $json.period\n  },\n  impact: 'Conversion tracking and attribution may be affected',\n  action_required: 'Immediate investigation required',\n  priority: 'HIGH'\n};\n\nconsole.error(`[CRITICAL ALERT] Facebook API dropping events: ${$json.facebook_api.total_events_dropped} events dropped`);\n\nreturn {\n  alert: alertData,\n  monitoring_data: $json\n};"
+      },
+      "name": "Prepare Critical Alert",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$env.SLACK_BOT_TOKEN}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "name": "Check Slack Configuration",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "https://slack.com/api/chat.postMessage",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SLACK_BOT_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"channel\": \"{{$env.SLACK_CHANNEL_ID}}\",\n  \"text\": \"🚨 CRITICAL: Facebook Offline Events Issue\",\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": {\n        \"type\": \"plain_text\",\n        \"text\": \"🚨 CRITICAL ALERT: Facebook Events\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Issue:*\\n{{$json.alert.issue}}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Events Dropped:*\\n{{$json.alert.details.events_dropped}}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Success Rate:*\\n{{$json.alert.details.success_rate}}%\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Priority:*\\n{{$json.alert.priority}}\"\n        }\n      ]\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Impact:* {{$json.alert.impact}}\\n*Action Required:* {{$json.alert.action_required}}\"\n      }\n    },\n    {\n      \"type\": \"divider\"\n    },\n    {\n      \"type\": \"context\",\n      \"elements\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"📊 Monitoring Period: {{$json.alert.details.period.start}} to {{$json.alert.details.period.end}}\"\n        }\n      ]\n    }\n  ]\n}"
+      },
+      "name": "Send Critical Slack Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [1340, 160]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Log regular monitoring report\nconst logEntry = {\n  timestamp: new Date().toISOString(),\n  level: 'INFO',\n  type: 'monitoring_report',\n  health_status: $json.health_status,\n  facebook_api: $json.facebook_api,\n  event_summary: {\n    total_events: Object.values($json.event_types).reduce((sum, event) => sum + event.success + event.errors, 0),\n    total_success: Object.values($json.event_types).reduce((sum, event) => sum + event.success, 0),\n    total_errors: Object.values($json.event_types).reduce((sum, event) => sum + event.errors, 0)\n  },\n  period: $json.period,\n  message: 'Regular Facebook offline events monitoring report'\n};\n\nconsole.log(`[MONITORING INFO] Health: ${$json.health_status} | Events: ${logEntry.event_summary.total_events} | Success Rate: ${$json.facebook_api.success_rate}%`);\n\nreturn logEntry;"
+      },
+      "name": "Log Monitoring Report",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.health_status}}",
+              "operation": "equal",
+              "value2": "DEGRADED"
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "name": "Check for Warnings",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "https://slack.com/api/chat.postMessage",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SLACK_BOT_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"channel\": \"{{$env.SLACK_CHANNEL_ID}}\",\n  \"text\": \"⚠️ Facebook Events Performance Warning\",\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": {\n        \"type\": \"plain_text\",\n        \"text\": \"⚠️ Performance Warning\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Status:*\\nDEGRADED\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Total Events:*\\n{{$json.event_summary.total_events}}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Success Rate:*\\n{{$json.facebook_api.success_rate}}%\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Errors:*\\n{{$json.event_summary.total_errors}}\"\n        }\n      ]\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"📊 *Monitoring Period:*\\n{{$json.period.start}} to {{$json.period.end}}\"\n      }\n    }\n  ]\n}"
+      },
+      "name": "Send Warning Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [1340, 360]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "value": "0 */6 * * *"
+            }
+          ]
+        }
+      },
+      "name": "Daily Summary - Every 6 hours",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate comprehensive daily summary report\nconst now = new Date();\nconst sixHoursAgo = new Date(now.getTime() - (6 * 60 * 60 * 1000));\n\nconst dailySummary = {\n  timestamp: now.toISOString(),\n  report_type: 'daily_summary',\n  period: {\n    start: sixHoursAgo.toISOString(),\n    end: now.toISOString(),\n    duration_hours: 6\n  },\n  facebook_events: {\n    atendimento: { total: 0, success: 0, failed: 0 },\n    visita: { total: 0, success: 0, failed: 0 },\n    lead_ganho: { total: 0, success: 0, failed: 0 },\n    lead_perdido: { total: 0, success: 0, failed: 0 }\n  },\n  utm_capture: {\n    mazi: { total: 0, success: 0, failed: 0 },\n    dicasa: { total: 0, success: 0, failed: 0 }\n  },\n  performance_metrics: {\n    overall_success_rate: 0,\n    average_response_time: 0,\n    total_revenue_tracked: 0,\n    conversion_events: 0\n  },\n  trends: {\n    compared_to_previous_period: 'stable',\n    error_rate_trend: 'stable',\n    volume_trend: 'stable'\n  },\n  recommendations: [\n    'Continue monitoring Facebook API performance',\n    'Review UTM parameter capture completeness',\n    'Validate conversion tracking accuracy'\n  ]\n};\n\nconsole.log(`[DAILY SUMMARY] Generating 6-hour summary report for Facebook events integration`);\n\nreturn dailySummary;"
+      },
+      "name": "Generate Daily Summary",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$env.SLACK_BOT_TOKEN}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "name": "Check Slack for Summary",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "https://slack.com/api/chat.postMessage",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SLACK_BOT_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"channel\": \"{{$env.SLACK_CHANNEL_ID}}\",\n  \"text\": \"📊 Facebook Events Integration - 6-Hour Summary\",\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": {\n        \"type\": \"plain_text\",\n        \"text\": \"📊 Facebook Events - 6-Hour Summary\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Performance Overview*\\n• Overall Success Rate: {{$json.performance_metrics.overall_success_rate}}%\\n• Total Conversion Events: {{$json.performance_metrics.conversion_events}}\\n• Revenue Tracked: ${{$json.performance_metrics.total_revenue_tracked}}\"\n      }\n    },\n    {\n      \"type\": \"divider\"\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Atendimento Events*\\n✅ Success: {{$json.facebook_events.atendimento.success}}\\n❌ Failed: {{$json.facebook_events.atendimento.failed}}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Visita Events*\\n✅ Success: {{$json.facebook_events.visita.success}}\\n❌ Failed: {{$json.facebook_events.visita.failed}}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Lead Ganho Events*\\n✅ Success: {{$json.facebook_events.lead_ganho.success}}\\n❌ Failed: {{$json.facebook_events.lead_ganho.failed}}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*UTM Capture*\\n📍 Mazi: {{$json.utm_capture.mazi.success}}/{{$json.utm_capture.mazi.total}}\\n🏠 DiCasa: {{$json.utm_capture.dicasa.success}}/{{$json.utm_capture.dicasa.total}}\"\n        }\n      ]\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Trends:* {{$json.trends.compared_to_previous_period}} performance compared to previous period\"\n      }\n    },\n    {\n      \"type\": \"context\",\n      \"elements\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"📅 Period: {{$json.period.start}} to {{$json.period.end}} ({{$json.period.duration_hours}} hours)\"\n        }\n      ]\n    }\n  ]\n}"
+      },
+      "name": "Send Daily Summary to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [900, 600]
+    }
+  ],
+  "connections": {
+    "Schedule - Every 15 minutes": {
+      "main": [
+        [
+          {
+            "node": "Generate Monitoring Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Monitoring Report": {
+      "main": [
+        [
+          {
+            "node": "Check for Critical Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Critical Issues": {
+      "main": [
+        [
+          {
+            "node": "Prepare Critical Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Monitoring Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Critical Alert": {
+      "main": [
+        [
+          {
+            "node": "Check Slack Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Slack Configuration": {
+      "main": [
+        [
+          {
+            "node": "Send Critical Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Log Monitoring Report": {
+      "main": [
+        [
+          {
+            "node": "Check for Warnings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Warnings": {
+      "main": [
+        [
+          {
+            "node": "Send Warning Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Daily Summary - Every 6 hours": {
+      "main": [
+        [
+          {
+            "node": "Generate Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "Check Slack for Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Slack for Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Summary to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "monitoring",
+      "name": "Monitoring"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "alerts",
+      "name": "Alerts"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}

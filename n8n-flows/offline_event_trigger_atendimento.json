@@ -1,0 +1,310 @@
+{
+  "name": "Offline Event Trigger - Atendimento",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "facebook_event_atendimento",
+        "method": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook - Atendimento Event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "atendimento-event"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"lead_id\"]}}",
+              "operation": "isNotEmpty"
+            },
+            {
+              "value1": "={{$json[\"email\"]}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "name": "Validate Required Data",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Hash personal data for Facebook API\nconst crypto = require('crypto');\n\nfunction hashSha256(value) {\n  if (!value) return '';\n  const normalized = value.toString().trim().toLowerCase();\n  return crypto.createHash('sha256').update(normalized).digest('hex');\n}\n\n// Extract and hash user data\nconst userData = {\n  em: [hashSha256($json.email)],\n  ph: $json.phone ? [hashSha256($json.phone.replace(/[^\\d]/g, ''))] : [],\n  fn: $json.first_name ? [hashSha256($json.first_name)] : [],\n  ln: $json.last_name ? [hashSha256($json.last_name)] : []\n};\n\n// Prepare custom data with UTM parameters\nconst customData = {\n  currency: 'USD',\n  value: 0,\n  lead_id: $json.lead_id,\n  pipeline_stage: 'Atendimento',\n  event_type: 'contact_initiated'\n};\n\n// Add UTM data if available\nif ($json.utm_source) customData.utm_source = $json.utm_source;\nif ($json.utm_medium) customData.utm_medium = $json.utm_medium;\nif ($json.utm_campaign) customData.utm_campaign = $json.utm_campaign;\nif ($json.utm_content) customData.utm_content = $json.utm_content;\nif ($json.utm_term) customData.utm_term = $json.utm_term;\n\n// Prepare Facebook event payload\nconst facebookEvent = {\n  event_name: 'InitiateContact',\n  event_time: Math.floor(Date.now() / 1000),\n  event_source_url: $json.source_url || 'https://yoursite.com',\n  user_data: userData,\n  custom_data: customData,\n  action_source: 'other'\n};\n\nconsole.log(`[ATENDIMENTO EVENT] Prepared Facebook event for lead ${$json.lead_id}`);\n\nreturn {\n  facebook_event: facebookEvent,\n  original_data: $json,\n  processed_at: new Date().toISOString()\n};"
+      },
+      "name": "Prepare Facebook Event Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [680, 240]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "=https://graph.facebook.com/v19.0/{{$env.FACEBOOK_AD_ACCOUNT_ID}}/events",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.FACEBOOK_ACCESS_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"data\": [{{JSON.stringify($json.facebook_event)}}],\n  \"test_event_code\": \"{{$env.TEST_EVENT_CODE}}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Send Event to Facebook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [900, 240]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Log successful Facebook event\nconst logEntry = {\n  timestamp: new Date().toISOString(),\n  level: 'SUCCESS',\n  event_type: 'atendimento',\n  lead_id: $json.original_data.lead_id,\n  facebook_response: {\n    events_received: $json.events_received || 0,\n    events_dropped: $json.events_dropped || 0,\n    messages: $json.messages || []\n  },\n  event_data: {\n    event_name: 'InitiateContact',\n    user_hashed: true,\n    utm_included: !!$json.original_data.utm_source\n  },\n  message: 'Atendimento event successfully sent to Facebook'\n};\n\nconsole.log(`[FACEBOOK ATENDIMENTO SUCCESS] Lead ${$json.original_data.lead_id} - Event sent successfully`);\n\nreturn logEntry;"
+      },
+      "name": "Log Success",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1120, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Atendimento event sent to Facebook successfully\",\n  \"lead_id\": \"{{$json.original_data.lead_id}}\",\n  \"event_name\": \"InitiateContact\",\n  \"facebook_response\": {\n    \"events_received\": {{$json.facebook_response.events_received}},\n    \"events_dropped\": {{$json.facebook_response.events_dropped}}\n  },\n  \"processed_at\": \"{{$json.timestamp}}\"\n}"
+      },
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 240]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Log Facebook API error\nconst error = $json.error || $input.all()[0].json.error || 'Unknown Facebook API error';\nconst leadId = $input.all()[0].json.original_data?.lead_id || $input.all()[0].json.lead_id || 'unknown';\n\nconst errorLog = {\n  timestamp: new Date().toISOString(),\n  level: 'ERROR',\n  event_type: 'atendimento',\n  lead_id: leadId,\n  error_type: 'facebook_api_failed',\n  error_message: error.toString(),\n  error_details: $json,\n  message: 'Failed to send Atendimento event to Facebook'\n};\n\nconsole.error(`[FACEBOOK ATENDIMENTO ERROR] Lead ${leadId} - Error: ${error}`);\n\n// Trigger alert for critical Facebook API failures\nif (error.toString().includes('Invalid OAuth') || error.toString().includes('Rate limit')) {\n  console.error(`[CRITICAL ALERT] Facebook API issue: ${error}`);\n}\n\nreturn errorLog;"
+      },
+      "name": "Log Facebook Error",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [900, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"message\": \"Failed to send Atendimento event to Facebook\",\n  \"error\": \"{{$json.error_message}}\",\n  \"lead_id\": \"{{$json.lead_id}}\"\n}",
+        "responseCode": 500
+      },
+      "name": "Facebook Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 420]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Log validation error\nconst errorLog = {\n  timestamp: new Date().toISOString(),\n  level: 'ERROR',\n  event_type: 'atendimento',\n  error_type: 'validation_failed',\n  error_message: 'Required data missing: lead_id and email are required',\n  input_data: $json,\n  message: 'Atendimento event validation failed'\n};\n\nconsole.error(`[ATENDIMENTO VALIDATION ERROR] Missing required data: ${JSON.stringify($json)}`);\n\nreturn errorLog;"
+      },
+      "name": "Log Validation Error",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [680, 360]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": false,\n  \"message\": \"Validation failed: lead_id and email are required\",\n  \"error\": \"Missing required parameters\"\n}",
+        "responseCode": 400
+      },
+      "name": "Validation Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 360]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$env.SLACK_BOT_TOKEN}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "name": "Check Slack Config",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1340, 420]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "https://slack.com/api/chat.postMessage",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SLACK_BOT_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"channel\": \"{{$env.SLACK_CHANNEL_ID}}\",\n  \"text\": \"🚨 Facebook API Error - Atendimento Event\",\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": {\n        \"type\": \"plain_text\",\n        \"text\": \"🚨 Facebook API Error\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Event Type:*\\nAtendimento\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Lead ID:*\\n{{$json.lead_id}}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Error:*\\n{{$json.error_message}}\"\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Time:*\\n{{$json.timestamp}}\"\n        }\n      ]\n    }\n  ]\n}"
+      },
+      "name": "Send Slack Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [1560, 380]
+    }
+  ],
+  "connections": {
+    "Webhook - Atendimento Event": {
+      "main": [
+        [
+          {
+            "node": "Validate Required Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Required Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Facebook Event Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Facebook Event Data": {
+      "main": [
+        [
+          {
+            "node": "Send Event to Facebook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Event to Facebook": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Success": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Facebook Error": {
+      "main": [
+        [
+          {
+            "node": "Facebook Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Facebook Error Response": {
+      "main": [
+        [
+          {
+            "node": "Check Slack Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Validation Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Slack Config": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "facebook-events",
+      "name": "Facebook Events"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "atendimento",
+      "name": "Atendimento"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}

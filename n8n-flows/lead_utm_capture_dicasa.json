@@ -1,0 +1,240 @@
+{
+  "name": "Lead UTM Capture to Kommo - DiCasa",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "utm_capture_dicasa",
+        "method": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook - DiCasa UTM Capture",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "dicasa-utm-capture"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"lead_id\"]}}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "name": "Validate Lead ID",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate and clean UTM data for DiCasa leads\nconst leadId = $json.lead_id;\nconst utmData = {\n  utm_source: $json.utm_source || '',\n  utm_medium: $json.utm_medium || '',\n  utm_campaign: $json.utm_campaign || '',\n  utm_content: $json.utm_content || '',\n  utm_term: $json.utm_term || ''\n};\n\n// Clean and validate UTM parameters\nObject.keys(utmData).forEach(key => {\n  if (utmData[key]) {\n    // Trim whitespace and limit length\n    utmData[key] = utmData[key].toString().trim().substring(0, 255);\n    // URL decode if needed\n    utmData[key] = decodeURIComponent(utmData[key]);\n  }\n});\n\n// Add DiCasa prefix to campaign if not already present\nif (utmData.utm_campaign && !utmData.utm_campaign.includes('dicasa_')) {\n  utmData.utm_campaign = 'dicasa_' + utmData.utm_campaign;\n}\n\nreturn {\n  lead_id: leadId,\n  ...utmData,\n  processed_at: new Date().toISOString(),\n  source_system: 'dicasa'\n};"
+      },
+      "name": "Process UTM Data - DiCasa",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [680, 240]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "=https://{{$env.KOMMO_ACCOUNT_DOMAIN}}/api/v4/leads/{{$json[\"lead_id\"]}}",
+        "method": "PATCH",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.KOMMO_API_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"custom_fields_values\": [\n    {\n      \"field_id\": \"{{$env.KOMMO_UTM_SOURCE_FIELD_ID}}\",\n      \"values\": [{\"value\": \"{{$json.utm_source}}\"}]\n    },\n    {\n      \"field_id\": \"{{$env.KOMMO_UTM_MEDIUM_FIELD_ID}}\",\n      \"values\": [{\"value\": \"{{$json.utm_medium}}\"}]\n    },\n    {\n      \"field_id\": \"{{$env.KOMMO_UTM_CAMPAIGN_FIELD_ID}}\",\n      \"values\": [{\"value\": \"{{$json.utm_campaign}}\"}]\n    },\n    {\n      \"field_id\": \"{{$env.KOMMO_UTM_CONTENT_FIELD_ID}}\",\n      \"values\": [{\"value\": \"{{$json.utm_content}}\"}]\n    },\n    {\n      \"field_id\": \"{{$env.KOMMO_UTM_TERM_FIELD_ID}}\",\n      \"values\": [{\"value\": \"{{$json.utm_term}}\"}]\n    }\n  ]\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Update Lead in Kommo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [900, 240]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Log successful UTM capture for DiCasa\nconst logEntry = {\n  timestamp: new Date().toISOString(),\n  level: 'SUCCESS',\n  system: 'dicasa',\n  lead_id: $json.lead_id,\n  utm_data: {\n    source: $json.utm_source,\n    medium: $json.utm_medium,\n    campaign: $json.utm_campaign,\n    content: $json.utm_content,\n    term: $json.utm_term\n  },\n  kommo_response: $json,\n  message: 'UTM parameters successfully captured and stored in Kommo'\n};\n\nconsole.log(`[DICASA UTM SUCCESS] Lead ${$json.lead_id} - UTM data captured: ${JSON.stringify(logEntry.utm_data)}`);\n\nreturn logEntry;"
+      },
+      "name": "Log Success", 
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1120, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"UTM parameters captured successfully for DiCasa lead\",\n  \"lead_id\": \"{{$json.lead_id}}\",\n  \"processed_at\": \"{{$json.processed_at}}\",\n  \"utm_data\": {\n    \"source\": \"{{$json.utm_source}}\",\n    \"medium\": \"{{$json.utm_medium}}\",\n    \"campaign\": \"{{$json.utm_campaign}}\",\n    \"content\": \"{{$json.utm_content}}\",\n    \"term\": \"{{$json.utm_term}}\"\n  }\n}"
+      },
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 240]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Log error for failed UTM capture\nconst error = $json.error || 'Unknown error occurred';\nconst leadId = $input.all()[0].json.lead_id || 'unknown';\n\nconst errorLog = {\n  timestamp: new Date().toISOString(),\n  level: 'ERROR',\n  system: 'dicasa',\n  lead_id: leadId,\n  error_type: 'utm_capture_failed',\n  error_message: error.toString(),\n  input_data: $input.all()[0].json,\n  message: 'Failed to capture UTM parameters for DiCasa lead'\n};\n\nconsole.error(`[DICASA UTM ERROR] Lead ${leadId} - Error: ${error}`);\n\nreturn errorLog;"
+      },
+      "name": "Log Error",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [680, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"message\": \"Failed to capture UTM parameters for DiCasa lead\",\n  \"error\": \"{{$json.error_message}}\",\n  \"lead_id\": \"{{$json.lead_id}}\"\n}",
+        "responseCode": 500
+      },
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 420]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate missing lead_id error\nconst errorLog = {\n  timestamp: new Date().toISOString(),\n  level: 'ERROR',\n  system: 'dicasa',\n  error_type: 'validation_failed',\n  error_message: 'Lead ID is required but not provided',\n  input_data: $json,\n  message: 'UTM capture validation failed - missing lead_id'\n};\n\nconsole.error(`[DICASA UTM VALIDATION ERROR] Missing lead_id in request`);\n\nreturn errorLog;"
+      },
+      "name": "Log Validation Error",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [680, 360]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": false,\n  \"message\": \"Validation failed: lead_id is required\",\n  \"error\": \"Missing required parameter: lead_id\"\n}",
+        "responseCode": 400
+      },
+      "name": "Validation Error Response", 
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 360]
+    }
+  ],
+  "connections": {
+    "Webhook - DiCasa UTM Capture": {
+      "main": [
+        [
+          {
+            "node": "Validate Lead ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Lead ID": {
+      "main": [
+        [
+          {
+            "node": "Process UTM Data - DiCasa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process UTM Data - DiCasa": {
+      "main": [
+        [
+          {
+            "node": "Update Lead in Kommo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead in Kommo": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Success": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Error": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Validation Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "utm-capture",
+      "name": "UTM Capture"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z", 
+      "id": "dicasa",
+      "name": "DiCasa"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}

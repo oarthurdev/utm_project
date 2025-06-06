@@ -1,0 +1,255 @@
+{
+  "mapping_version": "1.0",
+  "last_updated": "2024-01-15T10:00:00.000Z",
+  "description": "Mapping configuration for Kommo CRM custom fields used in the Facebook integration",
+  
+  "utm_fields": {
+    "utm_source": {
+      "field_name": "UTM Source",
+      "field_type": "text",
+      "field_code": "utm_source",
+      "kommo_field_id": "${KOMMO_UTM_SOURCE_FIELD_ID}",
+      "required": false,
+      "max_length": 255,
+      "description": "Traffic source identifier (e.g., google, facebook, direct)",
+      "validation": {
+        "allow_empty": true,
+        "trim_whitespace": true,
+        "url_decode": true
+      },
+      "common_values": [
+        "google",
+        "facebook", 
+        "instagram",
+        "linkedin",
+        "email",
+        "direct",
+        "organic",
+        "referral"
+      ]
+    },
+    "utm_medium": {
+      "field_name": "UTM Medium",
+      "field_type": "text", 
+      "field_code": "utm_medium",
+      "kommo_field_id": "${KOMMO_UTM_MEDIUM_FIELD_ID}",
+      "required": false,
+      "max_length": 255,
+      "description": "Marketing medium identifier (e.g., cpc, social, email)",
+      "validation": {
+        "allow_empty": true,
+        "trim_whitespace": true,
+        "url_decode": true
+      },
+      "common_values": [
+        "cpc",
+        "social", 
+        "email",
+        "organic",
+        "referral",
+        "display",
+        "banner",
+        "video"
+      ]
+    },
+    "utm_campaign": {
+      "field_name": "UTM Campaign",
+      "field_type": "text",
+      "field_code": "utm_campaign", 
+      "kommo_field_id": "${KOMMO_UTM_CAMPAIGN_FIELD_ID}",
+      "required": false,
+      "max_length": 255,
+      "description": "Campaign name identifier",
+      "validation": {
+        "allow_empty": true,
+        "trim_whitespace": true,
+        "url_decode": true,
+        "add_system_prefix": true
+      },
+      "system_prefixes": {
+        "mazi": "mazi_",
+        "dicasa": "dicasa_"
+      }
+    },
+    "utm_content": {
+      "field_name": "UTM Content",
+      "field_type": "text",
+      "field_code": "utm_content",
+      "kommo_field_id": "${KOMMO_UTM_CONTENT_FIELD_ID}",
+      "required": false,
+      "max_length": 255,
+      "description": "Content/ad variation identifier",
+      "validation": {
+        "allow_empty": true,
+        "trim_whitespace": true,
+        "url_decode": true
+      },
+      "common_values": [
+        "ad_variant_a",
+        "ad_variant_b",
+        "banner_top",
+        "banner_sidebar",
+        "text_ad",
+        "video_ad",
+        "carousel_ad"
+      ]
+    },
+    "utm_term": {
+      "field_name": "UTM Term",
+      "field_type": "text",
+      "field_code": "utm_term",
+      "kommo_field_id": "${KOMMO_UTM_TERM_FIELD_ID}",
+      "required": false,
+      "max_length": 255,
+      "description": "Keyword term identifier for paid search",
+      "validation": {
+        "allow_empty": true,
+        "trim_whitespace": true,
+        "url_decode": true
+      }
+    }
+  },
+
+  "lead_fields": {
+    "lead_id": {
+      "field_name": "Lead ID",
+      "field_type": "number",
+      "required": true,
+      "description": "Unique identifier for the lead in Kommo CRM"
+    },
+    "email": {
+      "field_name": "Email",
+      "field_type": "email",
+      "required": true,
+      "description": "Lead's email address for Facebook event tracking"
+    },
+    "phone": {
+      "field_name": "Phone",
+      "field_type": "text",
+      "required": false,
+      "description": "Lead's phone number for enhanced matching"
+    },
+    "first_name": {
+      "field_name": "First Name",
+      "field_type": "text",
+      "required": false,
+      "description": "Lead's first name for enhanced matching"
+    },
+    "last_name": {
+      "field_name": "Last Name", 
+      "field_type": "text",
+      "required": false,
+      "description": "Lead's last name for enhanced matching"
+    }
+  },
+
+  "deal_fields": {
+    "deal_value": {
+      "field_name": "Deal Value",
+      "field_type": "price",
+      "required": false,
+      "description": "Deal value for conversion tracking",
+      "validation": {
+        "min_value": 0,
+        "max_value": 999999999,
+        "currency": "USD"
+      }
+    },
+    "deal_type": {
+      "field_name": "Deal Type",
+      "field_type": "select",
+      "required": false,
+      "description": "Type of real estate deal",
+      "options": [
+        "residential_sale",
+        "commercial_sale", 
+        "rental",
+        "investment",
+        "land_sale"
+      ]
+    },
+    "property_type": {
+      "field_name": "Property Type",
+      "field_type": "select",
+      "required": false,
+      "description": "Type of property involved in the deal",
+      "options": [
+        "house",
+        "apartment",
+        "condo",
+        "commercial",
+        "land",
+        "investment_property"
+      ]
+    }
+  },
+
+  "pipeline_stages": {
+    "atendimento": {
+      "stage_name": "Atendimento",
+      "stage_id": "atendimento_stage_id",
+      "description": "Initial contact/consultation stage",
+      "facebook_event": "InitiateContact",
+      "event_value": 0,
+      "priority": "medium"
+    },
+    "visita": {
+      "stage_name": "Visita",
+      "stage_id": "visita_stage_id", 
+      "description": "Property visit/viewing scheduled",
+      "facebook_event": "Schedule",
+      "event_value": 5,
+      "priority": "medium"
+    },
+    "lead_ganho": {
+      "stage_name": "Lead Ganho",
+      "stage_id": "lead_ganho_stage_id",
+      "description": "Deal closed/won",
+      "facebook_event": "Purchase",
+      "event_value": "deal_value",
+      "priority": "high"
+    },
+    "lead_perdido": {
+      "stage_name": "Lead Perdido",
+      "stage_id": "lead_perdido_stage_id",
+      "description": "Deal lost/rejected",
+      "facebook_event": "LeadLost",
+      "event_value": 0,
+      "priority": "low"
+    }
+  },
+
+  "validation_rules": {
+    "utm_parameters": {
+      "max_length": 255,
+      "trim_whitespace": true,
+      "url_decode": true,
+      "allow_empty": true,
+      "sanitize_html": true
+    },
+    "required_for_facebook": [
+      "lead_id",
+      "email"
+    ],
+    "optional_for_enhanced_matching": [
+      "phone",
+      "first_name", 
+      "last_name"
+    ]
+  },
+
+  "api_endpoints": {
+    "kommo_base_url": "https://${KOMMO_ACCOUNT_DOMAIN}/api/v4",
+    "update_lead_endpoint": "/leads/{lead_id}",
+    "get_lead_endpoint": "/leads/{lead_id}",
+    "custom_fields_endpoint": "/leads/custom_fields"
+  },
+
+  "error_handling": {
+    "max_retries": 3,
+    "retry_delay_ms": 1000,
+    "timeout_ms": 30000,
+    "log_failures": true,
+    "alert_on_critical_errors": true
+  }
+}

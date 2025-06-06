@@ -1,0 +1,300 @@
+Projeto: Integração Kommo + N8N + Facebook Ads
+Nome do Projeto: kommo-n8n-facebook-integration
+
+📋 Descrição Geral
+Crie um projeto completo que integre Kommo CRM, N8N e Facebook Offline Conversions API para:
+
+✅ Capturar automaticamente parâmetros UTM de leads e armazenar no Kommo.
+✅ Disparar eventos offline para o Facebook Ads quando o lead muda de fase no funil do Kommo.
+✅ Automatizar fluxos via N8N.
+✅ Registrar logs e enviar alertas de falhas.
+
+🎯 Objetivos Detalhados
+1️⃣ Captura de UTM no Kommo
+
+Criar fluxos no N8N com Webhook:
+
+Lead UTM Capture to Kommo
+
+Quando um lead chega (via formulário, WhatsApp ou site):
+
+Capturar os parâmetros:
+
+utm_source
+
+utm_medium
+
+utm_campaign
+
+utm_content
+
+utm_term
+
+Gravar nos campos personalizados do lead no Kommo.
+
+2️⃣ Disparo de Eventos Offline para Facebook
+Criar fluxos no N8N:
+
+Offline Event Trigger - Atendimento
+
+Offline Event Trigger - Visita
+
+Offline Event Trigger - Lead Ganho
+
+Offline Event Trigger - Lead Perdido (opcional).
+
+Quando o lead muda de fase:
+
+Disparar eventos offline para Facebook Offline Conversions API.
+
+Enviar dados com hash SHA256:
+
+Email
+
+Telefone
+
+Nome e Sobrenome
+
+UTM capturada
+
+Registrar logs de envio.
+
+Alertar falhas (Slack ou e-mail).
+
+3️⃣ Logging e Alertas
+Criar fluxo no N8N:
+
+Logs & Alerts - Offline Events Facebook
+
+Registrar logs de todos os envios e alertar em caso de falhas.
+
+📡 Plataformas
+N8N rodando online (servidor próprio ou cloud).
+
+Integração com Kommo via API REST.
+
+Integração com Facebook Offline Conversions API.
+
+🌍 Ambiente
+100% Online.
+
+Necessário comunicação contínua entre sistemas.
+
+☁️ Hosting
+N8N preferencialmente em VPS (Docker) ou N8N Cloud.
+
+Kommo e Facebook já são SaaS.
+
+🎨 Interface
+Não requer interface para usuário final.
+
+Apenas fluxos no N8N e logs.
+
+📊 Saídas Esperadas
+Campos UTM corretamente gravados no Kommo.
+
+Eventos offline enviados e visíveis no Facebook Ads Manager.
+
+Logs de execução no repositório.
+
+Alertas de falha automatizados.
+
+🖥️ Exemplos de Fluxos N8N
+Fornecer exemplos em JSON prontos:
+
+1️⃣ Fluxo de captura UTM → Kommo:
+
+{
+  "name": "Lead UTM Capture to Kommo",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "utm_capture",
+        "method": "POST"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "https://{{KOMMO_ACCOUNT_DOMAIN}}/api/v4/leads/{{lead_id}}",
+        "method": "PATCH",
+        "responseFormat": "json",
+        "headerParametersUi": {
+          "parameter": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{KOMMO_API_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParametersJson": " {\n  \"custom_fields_values\": [\n    { \"field_id\": \"utm_source_field_id\", \"values\": [{\"value\": \"{{$json[\"utm_source\"]}}\"}] },\n    { \"field_id\": \"utm_medium_field_id\", \"values\": [{\"value\": \"{{$json[\"utm_medium\"]}}\"}] },\n    { \"field_id\": \"utm_campaign_field_id\", \"values\": [{\"value\": \"{{$json[\"utm_campaign\"]}}\"}] },\n    { \"field_id\": \"utm_content_field_id\", \"values\": [{\"value\": \"{{$json[\"utm_content\"]}}\"}] },\n    { \"field_id\": \"utm_term_field_id\", \"values\": [{\"value\": \"{{$json[\"utm_term\"]}}\"}] }\n  ]\n}"
+      },
+      "name": "Update Lead in Kommo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Update Lead in Kommo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
+2️⃣ Fluxo de envio de Evento Offline → Facebook:
+
+{
+  "name": "Offline Event Trigger - Facebook",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "facebook_offline_event",
+        "method": "POST"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const crypto = require('crypto');\n\nfunction hashSha256(value) {\n  return crypto.createHash('sha256').update(value).digest('hex');\n}\n\nreturn {\n  event_name: $json.event_name,\n  event_time: Math.floor(Date.now() / 1000),\n  user_data: {\n    em: [hashSha256($json.email)],\n    ph: [hashSha256($json.phone)],\n    fn: [hashSha256($json.first_name)],\n    ln: [hashSha256($json.last_name)]\n  },\n  custom_data: {\n    utm_source: $json.utm_source,\n    utm_medium: $json.utm_medium,\n    utm_campaign: $json.utm_campaign,\n    utm_content: $json.utm_content,\n    utm_term: $json.utm_term\n  }\n};"
+      },
+      "name": "Prepare Facebook Payload",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [550, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "https://graph.facebook.com/v19.0/{{FACEBOOK_AD_ACCOUNT_ID}}/events",
+        "method": "POST",
+        "responseFormat": "json",
+        "headerParametersUi": {
+          "parameter": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{FACEBOOK_ACCESS_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParametersJson": "{\n  \"data\": [\n    {{$json}}\n  ],\n  \"test_event_code\": \"{{TEST_EVENT_CODE}}\"\n}"
+      },
+      "name": "Send Event to Facebook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Facebook Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Facebook Payload": {
+      "main": [
+        [
+          {
+            "node": "Send Event to Facebook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
+
+🗂️ Estrutura de Pastas
+
+kommo-n8n-facebook-integration/
+├── README.md
+├── .env.example
+├── docs/
+│   ├── architecture_diagram.png
+│   ├── utm_fields_mapping.md
+│   ├── facebook_events_mapping.md
+│   ├── n8n_flows_description.md
+├── n8n-flows/
+│   ├── lead_utm_capture_mazi.json
+│   ├── lead_utm_capture_dicasa.json
+│   ├── offline_event_trigger_atendimento.json
+│   ├── offline_event_trigger_visita.json
+│   ├── offline_event_trigger_lead_ganho.json
+│   ├── offline_event_trigger_lead_perdido.json
+│   ├── logs_alerts_offline_events.json
+├── helpers/
+│   ├── hash_utils.js
+├── config/
+│   ├── kommo_fields_mapping.json
+│   ├── facebook_events_config.json
+└── logs/
+    ├── offline_events.log
+    ├── utm_capture.log
+
+📋 README.md
+Gerar um README.md completo conforme o exemplo fornecido no prompt anterior, com as seguintes seções:
+
+✅ Objetivo do projeto
+✅ Visão geral das plataformas
+✅ Funcionalidades detalhadas
+✅ Estrutura de pastas
+✅ Variáveis de ambiente (.env.example)
+✅ Função de hash SHA256
+✅ Diagrama de arquitetura
+✅ Logs
+✅ Checklist de boas práticas
+✅ Idiomas utilizados
+
+🔐 Função de Hash SHA256
+Gerar helper hash_utils.js com a função:
+
+const crypto = require('crypto');
+
+function hashSha256(value) {
+  if (!value) return '';
+  return crypto.createHash('sha256').update(value.trim().toLowerCase()).digest('hex');
+}
+
+module.exports = {
+  hashSha256
+};
+
+Pedidos finais ao Replit Agent:
+
+✅ Gerar todos os fluxos sugeridos no N8N em formato JSON.
+✅ Gerar função de hash SHA256.
+✅ Gerar template .env.example com os placeholders adequados.
+✅ Gerar README.md completo.
+✅ Organizar o repositório na estrutura fornecida.
+✅ Garantir que a documentação final esteja clara e pronta para uso.

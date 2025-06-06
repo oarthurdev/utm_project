@@ -1,0 +1,254 @@
+{
+  "config_version": "1.0",
+  "last_updated": "2024-01-15T10:00:00.000Z",
+  "description": "Configuration for Facebook Offline Conversions API events and mapping",
+  
+  "api_configuration": {
+    "base_url": "https://graph.facebook.com/v19.0",
+    "events_endpoint": "/{ad_account_id}/events",
+    "api_version": "v19.0",
+    "timeout_ms": 30000,
+    "max_retries": 3,
+    "retry_delay_ms": 1000
+  },
+
+  "authentication": {
+    "access_token_env": "FACEBOOK_ACCESS_TOKEN",
+    "ad_account_id_env": "FACEBOOK_AD_ACCOUNT_ID",
+    "pixel_id_env": "FACEBOOK_PIXEL_ID",
+    "dataset_id_env": "FACEBOOK_DATASET_ID",
+    "test_event_code_env": "TEST_EVENT_CODE"
+  },
+
+  "event_mappings": {
+    "atendimento": {
+      "facebook_event_name": "InitiateContact",
+      "event_description": "Initial contact or consultation request",
+      "standard_event": true,
+      "value": 0,
+      "currency": "USD",
+      "action_source": "other",
+      "priority": "medium",
+      "custom_data_fields": {
+        "lead_id": "string",
+        "pipeline_stage": "string",
+        "event_type": "string",
+        "utm_source": "string",
+        "utm_medium": "string", 
+        "utm_campaign": "string",
+        "utm_content": "string",
+        "utm_term": "string"
+      }
+    },
+    "visita": {
+      "facebook_event_name": "Schedule",
+      "event_description": "Property visit or viewing scheduled", 
+      "standard_event": true,
+      "value": 5,
+      "currency": "USD",
+      "action_source": "other",
+      "priority": "medium",
+      "custom_data_fields": {
+        "lead_id": "string",
+        "pipeline_stage": "string",
+        "event_type": "string",
+        "scheduled_date": "string",
+        "visit_type": "string", 
+        "property_id": "string",
+        "utm_source": "string",
+        "utm_medium": "string",
+        "utm_campaign": "string",
+        "utm_content": "string",
+        "utm_term": "string"
+      }
+    },
+    "lead_ganho": {
+      "facebook_event_name": "Purchase",
+      "event_description": "Deal closed successfully (conversion)",
+      "standard_event": true,
+      "value": "deal_value",
+      "currency": "USD", 
+      "action_source": "other",
+      "priority": "high",
+      "custom_data_fields": {
+        "lead_id": "string",
+        "pipeline_stage": "string",
+        "event_type": "string",
+        "deal_value": "number",
+        "deal_id": "string",
+        "revenue": "number",
+        "deal_type": "string",
+        "property_type": "string",
+        "closing_date": "string",
+        "commission": "number",
+        "utm_source": "string",
+        "utm_medium": "string",
+        "utm_campaign": "string", 
+        "utm_content": "string",
+        "utm_term": "string"
+      }
+    },
+    "lead_perdido": {
+      "facebook_event_name": "LeadLost",
+      "event_description": "Deal lost or rejected",
+      "standard_event": false,
+      "value": 0,
+      "currency": "USD",
+      "action_source": "other", 
+      "priority": "low",
+      "custom_data_fields": {
+        "lead_id": "string",
+        "pipeline_stage": "string",
+        "event_type": "string",
+        "loss_reason": "string",
+        "competitor": "string",
+        "price_objection": "boolean",
+        "timeline_mismatch": "boolean",
+        "feedback": "string",
+        "lost_date": "string",
+        "utm_source": "string",
+        "utm_medium": "string",
+        "utm_campaign": "string",
+        "utm_content": "string",
+        "utm_term": "string"
+      }
+    }
+  },
+
+  "user_data_requirements": {
+    "required_fields": [
+      "em"
+    ],
+    "optional_fields": [
+      "ph",
+      "fn", 
+      "ln"
+    ],
+    "hashing": {
+      "algorithm": "SHA256",
+      "normalize": true,
+      "lowercase": true,
+      "trim_whitespace": true,
+      "phone_digits_only": true
+    },
+    "validation": {
+      "email_format": true,
+      "phone_min_length": 10,
+      "require_at_least_one_identifier": true
+    }
+  },
+
+  "data_processing": {
+    "event_time": {
+      "format": "unix_timestamp",
+      "timezone": "UTC",
+      "auto_generate": true
+    },
+    "event_source_url": {
+      "default": "https://yoursite.com",
+      "required": false
+    },
+    "custom_data_limits": {
+      "max_string_length": 255,
+      "max_custom_properties": 25,
+      "currency_code_length": 3
+    }
+  },
+
+  "rate_limiting": {
+    "max_events_per_batch": 1000,
+    "max_batches_per_hour": 1000,
+    "recommended_delay_between_calls_ms": 100,
+    "burst_limit": 200
+  },
+
+  "error_handling": {
+    "retry_on_errors": [
+      "rate_limit_exceeded",
+      "temporary_server_error",
+      "network_timeout"
+    ],
+    "do_not_retry_on_errors": [
+      "invalid_access_token",
+      "invalid_ad_account",
+      "malformed_request",
+      "permission_denied"
+    ],
+    "alert_on_critical_errors": [
+      "invalid_access_token",
+      "permission_denied",
+      "ad_account_suspended"
+    ],
+    "log_all_errors": true
+  },
+
+  "monitoring": {
+    "success_metrics": [
+      "events_received",
+      "events_processed",
+      "match_rate"
+    ],
+    "failure_metrics": [
+      "events_dropped",
+      "api_errors",
+      "validation_errors"
+    ],
+    "performance_metrics": [
+      "response_time_ms",
+      "throughput_events_per_minute",
+      "success_rate_percentage"
+    ]
+  },
+
+  "testing": {
+    "test_event_code_required": true,
+    "test_mode": {
+      "enabled": false,
+      "log_events_only": false,
+      "validate_without_sending": false
+    },
+    "validation_endpoints": {
+      "test_events": "/{ad_account_id}/activities",
+      "debug_token": "/debug_token"
+    }
+  },
+
+  "compliance": {
+    "data_retention_days": 90,
+    "gdpr_compliant": true,
+    "ccpa_compliant": true,
+    "data_minimization": true,
+    "purpose_limitation": "marketing_attribution_only"
+  },
+
+  "webhook_configuration": {
+    "utm_capture": {
+      "mazi": {
+        "webhook_path": "utm_capture_mazi",
+        "method": "POST"
+      },
+      "dicasa": {
+        "webhook_path": "utm_capture_dicasa", 
+        "method": "POST"
+      }
+    },
+    "facebook_events": {
+      "atendimento": {
+        "webhook_path": "facebook_event_atendimento",
+        "method": "POST"
+      },
+      "visita": {
+        "webhook_path": "facebook_event_visita",
+        "method": "POST"
+      },
+      "lead_ganho": {
+        "webhook_path": "facebook_event_lead_ganho",
+        "method": "POST"
+      },
+      "lead_perdido": {
+        "webhook_path": "facebook_event_lead_perdido",
+        "method": "POST"
+      }
+    }
+  }
+}

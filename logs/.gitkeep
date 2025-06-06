@@ -1,0 +1,11 @@
+# This file ensures the logs directory is tracked by Git
+# Log files will be generated here by the N8N workflows
+
+# Directory structure:
+# logs/
+# ├── utm_capture.log       - UTM parameter capture events
+# ├── offline_events.log    - Facebook offline conversion events  
+# ├── errors.log           - Error logs from all workflows
+# └── monitoring.log       - System monitoring and health checks
+
+# Note: Actual log files should be added to .gitignore to avoid committing sensitive data
