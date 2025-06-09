@@ -4,7 +4,7 @@
     {
       "parameters": {
         "path": "utm_capture_dicasa",
-        "method": "POST",
+        "httpMethod": "GET,POST",
         "responseMode": "responseNode",
         "options": {}
       },
@@ -19,25 +19,96 @@
         "conditions": {
           "string": [
             {
-              "value1": "={{$json[\"lead_id\"]}}",
-              "operation": "isNotEmpty"
+              "value1": "={{$json[\"$request\"][\"method\"]}}",
+              "value2": "GET"
             }
           ]
         }
       },
-      "name": "Validate Lead ID",
+      "name": "Check Request Method",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
       "position": [460, 300]
     },
     {
       "parameters": {
-        "functionCode": "// Validate and clean UTM data for DiCasa leads\nconst leadId = $json.lead_id;\nconst utmData = {\n  utm_source: $json.utm_source || '',\n  utm_medium: $json.utm_medium || '',\n  utm_campaign: $json.utm_campaign || '',\n  utm_content: $json.utm_content || '',\n  utm_term: $json.utm_term || ''\n};\n\n// Clean and validate UTM parameters\nObject.keys(utmData).forEach(key => {\n  if (utmData[key]) {\n    // Trim whitespace and limit length\n    utmData[key] = utmData[key].toString().trim().substring(0, 255);\n    // URL decode if needed\n    utmData[key] = decodeURIComponent(utmData[key]);\n  }\n});\n\n// Add DiCasa prefix to campaign if not already present\nif (utmData.utm_campaign && !utmData.utm_campaign.includes('dicasa_')) {\n  utmData.utm_campaign = 'dicasa_' + utmData.utm_campaign;\n}\n\nreturn {\n  lead_id: leadId,\n  ...utmData,\n  processed_at: new Date().toISOString(),\n  source_system: 'dicasa'\n};"
+        "functionCode": "// Facebook Webhook Verification for Lead Ads\nconst queryParams = $json.$request.query;\nconst hubMode = queryParams['hub.mode'];\nconst hubChallenge = queryParams['hub.challenge'];\nconst hubVerifyToken = queryParams['hub.verify_token'];\n\nconst expectedVerifyToken = $env.FACEBOOK_WEBHOOK_VERIFY_TOKEN;\n\nconsole.log(`[FACEBOOK WEBHOOK VERIFICATION] DiCasa - Mode: ${hubMode}, Token: ${hubVerifyToken}`);\n\n// Verify the webhook according to Facebook documentation\nif (hubMode === 'subscribe' && hubVerifyToken === expectedVerifyToken) {\n  console.log(`[FACEBOOK WEBHOOK SUCCESS] DiCasa - Webhook verified successfully`);\n  return {\n    verified: true,\n    challenge: hubChallenge,\n    message: 'Facebook webhook verified successfully for DiCasa'\n  };\n} else {\n  console.error(`[FACEBOOK WEBHOOK ERROR] DiCasa - Verification failed. Expected token: ${expectedVerifyToken}, Received: ${hubVerifyToken}`);\n  return {\n    verified: false,\n    error: 'Webhook verification failed',\n    message: 'Invalid verify token or mode'\n  };\n}"
+      },
+      "name": "Facebook Webhook Verification",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [680, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json[\"verified\"]}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Check Verification Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 180]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json[\"challenge\"]}}"
+      },
+      "name": "Return Challenge Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 120]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"message\": \"{{$json.message}}\",\n  \"error\": \"{{$json.error}}\"\n}",
+        "responseCode": 403
+      },
+      "name": "Verification Failed Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 240]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process Facebook Lead Ads webhook data for DiCasa\nconst requestData = $json;\n\n// Check if this is Facebook Lead Ads webhook data\nif (requestData.object === 'page' && requestData.entry) {\n  console.log(`[FACEBOOK LEAD ADS] DiCasa - Processing webhook data`);\n  \n  const entry = requestData.entry[0];\n  const changes = entry.changes || [];\n  \n  for (const change of changes) {\n    if (change.field === 'leadgen' && change.value) {\n      const leadData = change.value;\n      \n      // Extract lead information\n      const leadgenId = leadData.leadgen_id;\n      const formId = leadData.form_id;\n      const adId = leadData.ad_id;\n      const campaignId = leadData.campaign_id;\n      const adsetId = leadData.adset_id;\n      \n      // Process field data\n      const fieldData = {};\n      if (leadData.field_data) {\n        leadData.field_data.forEach(field => {\n          fieldData[field.name] = field.values[0] || '';\n        });\n      }\n      \n      // Extract UTM parameters from the lead data or use defaults\n      const utmData = {\n        utm_source: leadData.utm_source || 'facebook',\n        utm_medium: leadData.utm_medium || 'social',\n        utm_campaign: leadData.utm_campaign || `dicasa_campaign_${campaignId}`,\n        utm_content: leadData.utm_content || `ad_${adId}`,\n        utm_term: leadData.utm_term || ''\n      };\n      \n      return {\n        is_facebook_leadgen: true,\n        leadgen_id: leadgenId,\n        form_id: formId,\n        ad_id: adId,\n        campaign_id: campaignId,\n        adset_id: adsetId,\n        lead_data: fieldData,\n        utm_data: utmData,\n        processed_at: new Date().toISOString(),\n        source_system: 'dicasa'\n      };\n    }\n  }\n  \n  // No leadgen data found\n  return {\n    is_facebook_leadgen: false,\n    error: 'No leadgen data found in webhook',\n    raw_data: requestData\n  };\n} else {\n  // Direct UTM capture (legacy format)\n  const leadId = requestData.lead_id;\n  \n  if (!leadId) {\n    return {\n      is_facebook_leadgen: false,\n      error: 'Missing lead_id for direct UTM capture',\n      raw_data: requestData\n    };\n  }\n  \n  return {\n    is_facebook_leadgen: false,\n    lead_id: leadId,\n    utm_data: {\n      utm_source: requestData.utm_source || '',\n      utm_medium: requestData.utm_medium || '',\n      utm_campaign: requestData.utm_campaign || '',\n      utm_content: requestData.utm_content || '',\n      utm_term: requestData.utm_term || ''\n    },\n    processed_at: new Date().toISOString(),\n    source_system: 'dicasa'\n  };\n}"
+      },
+      "name": "Process Facebook Lead Ads Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [680, 360]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json[\"is_facebook_leadgen\"]}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Check Data Type",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 360]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process UTM data for DiCasa leads (both Facebook Lead Ads and direct UTM)\nconst inputData = $json;\nlet leadId, utmData, leadData = {};\n\nif (inputData.is_facebook_leadgen) {\n  // Facebook Lead Ads processing\n  leadId = inputData.leadgen_id;\n  utmData = inputData.utm_data;\n  leadData = inputData.lead_data;\n  \n  console.log(`[DICASA FACEBOOK LEADGEN] Processing lead: ${leadId}`);\n} else {\n  // Direct UTM capture processing\n  leadId = inputData.lead_id;\n  utmData = inputData.utm_data;\n  \n  console.log(`[DICASA DIRECT UTM] Processing lead: ${leadId}`);\n}\n\n// Clean and validate UTM parameters\nObject.keys(utmData).forEach(key => {\n  if (utmData[key]) {\n    // Trim whitespace and limit length\n    utmData[key] = utmData[key].toString().trim().substring(0, 255);\n    // URL decode if needed\n    try {\n      utmData[key] = decodeURIComponent(utmData[key]);\n    } catch (e) {\n      // Keep original if decode fails\n    }\n  }\n});\n\n// Add DiCasa prefix to campaign if not already present\nif (utmData.utm_campaign && !utmData.utm_campaign.includes('dicasa_')) {\n  utmData.utm_campaign = 'dicasa_' + utmData.utm_campaign;\n}\n\nreturn {\n  lead_id: leadId,\n  ...utmData,\n  lead_data: leadData,\n  is_facebook_leadgen: inputData.is_facebook_leadgen || false,\n  form_id: inputData.form_id,\n  ad_id: inputData.ad_id,\n  campaign_id: inputData.campaign_id,\n  processed_at: new Date().toISOString(),\n  source_system: 'dicasa'\n};"
       },
       "name": "Process UTM Data - DiCasa",
       "type": "n8n-nodes-base.function",
       "typeVersion": 1,
-      "position": [680, 240]
+      "position": [1120, 300]
     },
     {
       "parameters": {
@@ -134,14 +205,72 @@
       "main": [
         [
           {
-            "node": "Validate Lead ID",
+            "node": "Check Request Method",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Validate Lead ID": {
+    "Check Request Method": {
+      "main": [
+        [
+          {
+            "node": "Facebook Webhook Verification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Facebook Lead Ads Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Facebook Webhook Verification": {
+      "main": [
+        [
+          {
+            "node": "Check Verification Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Verification Success": {
+      "main": [
+        [
+          {
+            "node": "Return Challenge Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Verification Failed Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Facebook Lead Ads Data": {
+      "main": [
+        [
+          {
+            "node": "Check Data Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Data Type": {
       "main": [
         [
           {
