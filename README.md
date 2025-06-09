@@ -282,9 +282,24 @@ docker run -it --rm \
 ```
 
 ### Webhooks URLs
-- UTM Mazi: `https://sua-n8n.com/webhook/utm_capture_mazi`
-- UTM DiCasa: `https://sua-n8n.com/webhook/utm_capture_dicasa`
-- Facebook Events: `https://sua-n8n.com/webhook/facebook_event_{tipo}`
+- Facebook Lead Ads Mazi: `https://seu-replit.com/webhook/utm-capture/mazi`
+- Facebook Lead Ads DiCasa: `https://seu-replit.com/webhook/utm-capture/dicasa`
+- Facebook Events: `https://seu-replit.com/webhook/facebook/{tipo}`
+
+### Configuração Facebook Lead Ads
+
+1. **No Facebook Business Manager:**
+   - Acesse Configurações > Webhooks
+   - Adicione novo webhook para Lead Ads
+   - URL: `https://seu-replit.com/webhook/utm-capture/dicasa`
+   - Eventos: `leadgen` (formulários de leads)
+   - Verifique webhook com token de verificação
+
+2. **Campos do Formulário Facebook:**
+   - Email (obrigatório)
+   - Nome completo ou Primeiro Nome + Sobrenome
+   - Telefone (opcional)
+   - UTM parameters são capturados automaticamente do anúncio
 
 ## ✅ Checklist de Implementação
 

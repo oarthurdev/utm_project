@@ -163,54 +163,226 @@ app.get('/', (req, res) => {
 });
 
 /**
- * UTM Capture Webhooks
+ * Facebook Webhook Verification (GET request from Facebook)
  */
-app.post('/webhook/utm-capture/:system', (req, res) => {
+app.get('/webhook/utm-capture/:system', (req, res) => {
   const system = req.params.system;
-  const { lead_id, utm_source, utm_medium, utm_campaign, utm_content, utm_term } = req.body;
+  const { 'hub.mode': mode, 'hub.challenge': challenge, 'hub.verify_token': verifyToken } = req.query;
+  
+  logger.info(`Facebook webhook verification for ${system}`, { mode, verifyToken });
+  
+  // Facebook webhook verification
+  if (mode === 'subscribe' && verifyToken === process.env.FACEBOOK_WEBHOOK_VERIFY_TOKEN) {
+    logger.info(`Facebook webhook verified successfully for ${system}`);
+    res.status(200).send(challenge);
+  } else {
+    logger.info(`Facebook webhook verification failed for ${system}`, { mode, verifyToken });
+    res.status(403).send('Forbidden');
+  }
+});
 
-  logger.info(`UTM capture request received`, { system, lead_id });
+/**
+ * UTM Capture Webhooks - Facebook Lead Ads Integration
+ */
+app.post('/webhook/utm-capture/:system', async (req, res) => {
+  const system = req.params.system;
+  
+  logger.info(`Facebook Lead Ads webhook received for ${system}`, { body: req.body });
 
-  if (!lead_id) {
-    logger.utmError(system, 'unknown', new Error('Missing lead_id parameter'));
+  // Extract Facebook Lead Ads data structure
+  const {
+    // Facebook Lead data
+    leadgen_id,
+    form_id,
+    ad_id,
+    campaign_id,
+    adset_id,
+    
+    // Lead information from Facebook form
+    field_data = [],
+    
+    // UTM parameters from Facebook ad
+    utm_source,
+    utm_medium, 
+    utm_campaign,
+    utm_content,
+    utm_term,
+    
+    // Alternative: if UTM comes nested
+    custom_disclaimer = {}
+  } = req.body;
+
+  // Create or find lead in Kommo first
+  let lead_id = leadgen_id; // Use Facebook leadgen_id as reference
+  
+  if (!lead_id && !leadgen_id) {
+    logger.utmError(system, 'unknown', new Error('Missing leadgen_id from Facebook'));
     return res.status(400).json({
       success: false,
-      message: 'lead_id is required',
+      message: 'leadgen_id is required from Facebook Lead Ads',
       error: 'Missing required parameter'
     });
   }
 
-  // Get UTM field configuration
-  const utmConfig = getKommoFieldMapping('utm');
-  
-  // Process UTM data with validation
-  const processedData = {
-    lead_id,
-    utm_source: utm_source || '',
-    utm_medium: utm_medium || '',
-    utm_campaign: utm_campaign ? `${system}_${utm_campaign}` : '',
-    utm_content: utm_content || '',
-    utm_term: utm_term || '',
-    processed_at: new Date().toISOString(),
-    source_system: system,
-    demo_mode: isDemoMode
-  };
+  try {
+    // Extract lead data from Facebook form fields
+    const leadData = {};
+    if (field_data && Array.isArray(field_data)) {
+      field_data.forEach(field => {
+        switch(field.name?.toLowerCase()) {
+          case 'email':
+            leadData.email = field.values?.[0];
+            break;
+          case 'full_name':
+          case 'name':
+            leadData.name = field.values?.[0];
+            break;
+          case 'phone':
+          case 'phone_number':
+            leadData.phone = field.values?.[0];
+            break;
+          case 'first_name':
+            leadData.first_name = field.values?.[0];
+            break;
+          case 'last_name':
+            leadData.last_name = field.values?.[0];
+            break;
+        }
+      });
+    }
 
-  // In demo mode, show configuration requirements
-  if (isDemoMode) {
-    processedData.note = 'Demo mode - Configure KOMMO_ACCOUNT_DOMAIN and KOMMO_API_TOKEN for live integration';
+    // Process UTM data from Facebook ad
+    const utmData = {
+      utm_source: utm_source || 'facebook',
+      utm_medium: utm_medium || 'social',
+      utm_campaign: utm_campaign || `${system}_facebook_lead`,
+      utm_content: utm_content || `ad_${ad_id}`,
+      utm_term: utm_term || ''
+    };
+
+    // Add system prefix to campaign if not already present
+    if (utmData.utm_campaign && !utmData.utm_campaign.includes(`${system}_`)) {
+      utmData.utm_campaign = `${system}_${utmData.utm_campaign}`;
+    }
+
+    // Create lead in Kommo if not in demo mode
+    let kommoLeadId = null;
+    if (!isDemoMode && config.kommo.baseUrl && config.kommo.apiToken) {
+      try {
+        // Create lead in Kommo CRM
+        const createLeadResponse = await fetch(`${config.kommo.baseUrl}/leads`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${config.kommo.apiToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            name: leadData.name || `Facebook Lead ${leadgen_id}`,
+            responsible_user_id: 1,
+            custom_fields_values: [
+              {
+                field_id: config.kommo.utmFields.source,
+                values: [{ value: utmData.utm_source }]
+              },
+              {
+                field_id: config.kommo.utmFields.medium,
+                values: [{ value: utmData.utm_medium }]
+              },
+              {
+                field_id: config.kommo.utmFields.campaign,
+                values: [{ value: utmData.utm_campaign }]
+              },
+              {
+                field_id: config.kommo.utmFields.content,
+                values: [{ value: utmData.utm_content }]
+              },
+              {
+                field_id: config.kommo.utmFields.term,
+                values: [{ value: utmData.utm_term }]
+              }
+            ].filter(field => field.field_id), // Only include fields with valid IDs
+            _embedded: {
+              contacts: [{
+                first_name: leadData.first_name || leadData.name?.split(' ')[0] || '',
+                last_name: leadData.last_name || leadData.name?.split(' ').slice(1).join(' ') || '',
+                custom_fields_values: [
+                  leadData.email ? {
+                    field_code: 'EMAIL',
+                    field_type: 'multitext',
+                    values: [{ value: leadData.email, enum_code: 'WORK' }]
+                  } : null,
+                  leadData.phone ? {
+                    field_code: 'PHONE',
+                    field_type: 'multitext', 
+                    values: [{ value: leadData.phone, enum_code: 'WORK' }]
+                  } : null
+                ].filter(Boolean)
+              }]
+            }
+          })
+        });
+
+        if (createLeadResponse.ok) {
+          const leadResult = await createLeadResponse.json();
+          kommoLeadId = leadResult._embedded?.leads?.[0]?.id;
+          lead_id = kommoLeadId;
+        }
+      } catch (kommoError) {
+        logger.utmError(system, leadgen_id, kommoError);
+        // Continue processing even if Kommo fails
+      }
+    }
+
+    // Get UTM field configuration
+    const utmConfig = getKommoFieldMapping('utm');
+    
+    // Process complete data
+    const processedData = {
+      facebook_leadgen_id: leadgen_id,
+      kommo_lead_id: kommoLeadId,
+      lead_id: lead_id,
+      facebook_form_id: form_id,
+      facebook_ad_id: ad_id,
+      facebook_campaign_id: campaign_id,
+      facebook_adset_id: adset_id,
+      lead_data: leadData,
+      utm_data: utmData,
+      processed_at: new Date().toISOString(),
+      source_system: system,
+      demo_mode: isDemoMode
+    };
+
+    // In demo mode, show what would be created
+    if (isDemoMode) {
+      processedData.note = 'Demo mode - Configure KOMMO_ACCOUNT_DOMAIN and KOMMO_API_TOKEN for live Kommo integration';
+      processedData.kommo_api_url = createKommoApiUrl('/leads');
+    }
+
+    logger.utmSuccess(system, leadgen_id, processedData);
+
+    res.json({
+      success: true,
+      message: `Facebook Lead Ads data captured successfully for ${system}`,
+      facebook_leadgen_id: leadgen_id,
+      kommo_lead_id: kommoLeadId,
+      processed_at: processedData.processed_at,
+      lead_data: leadData,
+      utm_data: utmData,
+      configuration: utmConfig,
+      demo_mode: isDemoMode
+    });
+
+  } catch (error) {
+    logger.utmError(system, leadgen_id || 'unknown', error);
+    
+    res.status(500).json({
+      success: false,
+      message: `Failed to process Facebook Lead Ads data for ${system}`,
+      error: error.message,
+      facebook_leadgen_id: leadgen_id,
+      demo_mode: isDemoMode
+    });
   }
-
-  logger.utmSuccess(system, lead_id, processedData);
-
-  res.json({
-    success: true,
-    message: `UTM parameters captured successfully for ${system} lead`,
-    lead_id,
-    processed_at: processedData.processed_at,
-    utm_data: processedData,
-    configuration: utmConfig
-  });
 });
 
 /**
